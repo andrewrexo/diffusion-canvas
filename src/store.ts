@@ -36,6 +36,7 @@ interface AppState {
   balance: Balance | null
   settingsOpen: boolean
   toasts: Toast[]
+  editing: string | null
 
   panBy: (dx: number, dy: number) => void
   zoomAt: (cx: number, cy: number, factor: number) => void
@@ -58,6 +59,11 @@ interface AppState {
   disconnect: (to: string, port: InputPort) => void
   runGenerator: (id: string) => Promise<void>
 
+  openEditor: (id: string) => void
+  closeEditor: () => void
+  commitDrawing: (id: string, data: string) => void
+  addDrawingNode: (at: Vec) => void
+
   setApiKey: (key: string) => void
   refreshBalance: () => Promise<void>
   setSettingsOpen: (open: boolean) => void
@@ -74,6 +80,7 @@ export const useStore = create<AppState>()((set, get) => ({
   balance: null,
   settingsOpen: false,
   toasts: [],
+  editing: null,
 
   panBy: (dx, dy) =>
     set((s) => ({
@@ -313,6 +320,44 @@ export const useStore = create<AppState>()((set, get) => ({
       get().updateGenNode(id, { status: 'error', error: message })
       get().toast(message)
     }
+  },
+
+  openEditor: (id) => {
+    const n = get().doc.nodes[id]
+    if (n?.kind === 'image') set({ editing: id, selection: [id] })
+  },
+
+  closeEditor: () => set({ editing: null }),
+
+  commitDrawing: (id, data) => {
+    const n = get().doc.nodes[id]
+    if (!n || n.kind !== 'image') return
+    get().checkpoint()
+    set((s) => ({
+      doc: { ...s.doc, nodes: { ...s.doc.nodes, [id]: { ...n, data } } },
+    }))
+  },
+
+  addDrawingNode: (at) => {
+    const size = 64
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const scale = displayScale(size, size)
+    const node: ImageNode = {
+      id: uid(),
+      kind: 'image',
+      x: Math.round(at.x - (size * scale) / 2),
+      y: Math.round(at.y - (size * scale) / 2),
+      w: size,
+      h: size,
+      scale,
+      name: 'Drawing',
+      data: canvas.toDataURL('image/png'),
+      source: 'drawing',
+    }
+    get().addNodes([node])
+    set({ editing: node.id })
   },
 
   setApiKey: (key) => {

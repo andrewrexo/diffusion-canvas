@@ -6,7 +6,7 @@ import { clamp, uid } from '../lib/util'
 import { NodeView } from './NodeView'
 import { EdgeLayer } from './EdgeLayer'
 import { isInputPort, type PendingEdge } from './connect'
-import { IconImage, IconSpark } from '../ui/icons'
+import { IconImage, IconPencil, IconSpark } from '../ui/icons'
 
 const DRAG_MIN = 3
 
@@ -77,6 +77,7 @@ export function CanvasView() {
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
+      if (useStore.getState().editing) return
       if (e.code === 'Space' && !e.repeat && !isEditable(e.target)) {
         e.preventDefault()
         setSpaceHeld(true)
@@ -113,6 +114,7 @@ export function CanvasView() {
     const onKey = (e: KeyboardEvent) => {
       if (isEditable(e.target)) return
       const s = useStore.getState()
+      if (s.editing || s.settingsOpen) return
       const mod = e.metaKey || e.ctrlKey
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault()
@@ -171,7 +173,7 @@ export function CanvasView() {
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      if (isEditable(e.target) || !e.clipboardData) return
+      if (isEditable(e.target) || !e.clipboardData || useStore.getState().editing) return
       const files = [...e.clipboardData.items]
         .filter((i) => i.kind === 'file')
         .map((i) => i.getAsFile())
@@ -328,8 +330,14 @@ export function CanvasView() {
 
   const onDoubleClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement
-    if (target.closest('[data-node-id]') || target.closest('button, input, textarea, select')) return
-    useStore.getState().addGenNode(eventWorld(e))
+    if (target.closest('button, input, textarea, select')) return
+    const s = useStore.getState()
+    const nodeId = target.closest<HTMLElement>('[data-node-id]')?.dataset.nodeId
+    if (nodeId) {
+      if (s.doc.nodes[nodeId]?.kind === 'image') s.openEditor(nodeId)
+      return
+    }
+    s.addGenNode(eventWorld(e))
   }
 
   const nodes = Object.values(doc.nodes)
@@ -399,6 +407,14 @@ export function CanvasView() {
           }}
         >
           <IconSpark />
+        </button>
+        <button
+          title="New drawing"
+          onClick={() => {
+            if (ref.current) useStore.getState().addDrawingNode(centerOfCanvas(ref.current))
+          }}
+        >
+          <IconPencil />
         </button>
         <button title="Import image" onClick={() => fileRef.current?.click()}>
           <IconImage />

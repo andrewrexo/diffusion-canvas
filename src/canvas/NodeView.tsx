@@ -11,7 +11,13 @@ function NodeName({ node }: { node: CanvasNode }) {
 
   if (draft === null) {
     return (
-      <span className="node-name" onDoubleClick={() => setDraft(node.name)}>
+      <span
+        className="node-name"
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          setDraft(node.name)
+        }}
+      >
         {node.name}
       </span>
     )
