@@ -1,3 +1,7 @@
+import { useEffect } from 'react'
+import { useStore } from '../store'
+import { IconSliders } from './icons'
+
 export function Logo() {
   return (
     <svg viewBox="0 0 7 7" shapeRendering="crispEdges" aria-hidden="true">
@@ -16,6 +20,23 @@ export function Logo() {
 }
 
 export function TopBar() {
+  const apiKey = useStore((s) => s.apiKey)
+  const balance = useStore((s) => s.balance)
+  const refreshBalance = useStore((s) => s.refreshBalance)
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+
+  useEffect(() => {
+    if (useStore.getState().apiKey) void useStore.getState().refreshBalance()
+  }, [])
+
+  const label = !apiKey
+    ? 'Set API key'
+    : balance === null
+      ? '···'
+      : balance.balance > 0
+        ? `$${balance.balance.toFixed(2)}`
+        : `${balance.credits} credits`
+
   return (
     <header className="topbar">
       <div className="brand">
@@ -23,6 +44,16 @@ export function TopBar() {
         Diffusion Canvas
       </div>
       <div className="topbar-spacer" />
+      <button
+        className="chip"
+        title={apiKey ? 'Retro Diffusion balance — click to refresh' : 'Open settings'}
+        onClick={() => (apiKey ? void refreshBalance() : setSettingsOpen(true))}
+      >
+        {label}
+      </button>
+      <button className="iconbtn" title="Settings" onClick={() => setSettingsOpen(true)}>
+        <IconSliders />
+      </button>
     </header>
   )
 }

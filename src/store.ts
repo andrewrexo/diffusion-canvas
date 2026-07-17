@@ -1,5 +1,9 @@
 import { create } from 'zustand'
-import type { CanvasNode, Doc, Vec } from './types'
+import type { CanvasNode, Doc, GenNode, ImageNode, InputPort, Vec } from './types'
+import { GEN_W, nodeBounds } from './types'
+import { DEFAULT_STYLE } from './api/styles'
+import { generate, getBalance, type Balance } from './api/retro'
+import { displayScale } from './lib/image'
 import { clamp, uid } from './lib/util'
 
 export interface Viewport {
@@ -12,8 +16,15 @@ export const MIN_ZOOM = 0.1
 export const MAX_ZOOM = 8
 
 const HISTORY_LIMIT = 64
+const API_KEY_STORAGE = 'diffusion-canvas.api-key'
 
-const snapshot = (doc: Doc): Doc => ({ nodes: { ...doc.nodes } })
+const snapshot = (doc: Doc): Doc => ({ nodes: { ...doc.nodes }, edges: [...doc.edges] })
+
+export interface Toast {
+  id: string
+  text: string
+  kind: 'error' | 'info'
+}
 
 interface AppState {
   viewport: Viewport
@@ -21,6 +32,10 @@ interface AppState {
   selection: string[]
   past: Doc[]
   future: Doc[]
+  apiKey: string
+  balance: Balance | null
+  settingsOpen: boolean
+  toasts: Toast[]
 
   panBy: (dx: number, dy: number) => void
   zoomAt: (cx: number, cy: number, factor: number) => void
@@ -32,18 +47,33 @@ interface AppState {
 
   setSelection: (ids: string[]) => void
   addNodes: (nodes: CanvasNode[]) => void
+  addGenNode: (at: Vec) => void
+  updateGenNode: (id: string, patch: Partial<GenNode>) => void
   setNodePositions: (positions: Record<string, Vec>) => void
   renameNode: (id: string, name: string) => void
   deleteSelection: () => void
   duplicateSelection: () => void
+
+  connect: (from: string, to: string, port: InputPort) => void
+  disconnect: (to: string, port: InputPort) => void
+  runGenerator: (id: string) => Promise<void>
+
+  setApiKey: (key: string) => void
+  refreshBalance: () => Promise<void>
+  setSettingsOpen: (open: boolean) => void
+  toast: (text: string, kind?: Toast['kind']) => void
 }
 
 export const useStore = create<AppState>()((set, get) => ({
   viewport: { x: 0, y: 0, zoom: 1 },
-  doc: { nodes: {} },
+  doc: { nodes: {}, edges: [] },
   selection: [],
   past: [],
   future: [],
+  apiKey: localStorage.getItem(API_KEY_STORAGE) ?? '',
+  balance: null,
+  settingsOpen: false,
+  toasts: [],
 
   panBy: (dx, dy) =>
     set((s) => ({
@@ -107,6 +137,32 @@ export const useStore = create<AppState>()((set, get) => ({
     })
   },
 
+  addGenNode: (at) => {
+    get().addNodes([
+      {
+        id: uid(),
+        kind: 'gen',
+        x: Math.round(at.x - GEN_W / 2),
+        y: Math.round(at.y - 100),
+        name: 'Generator',
+        prompt: '',
+        style: DEFAULT_STYLE,
+        width: 128,
+        height: 128,
+        seed: null,
+        strength: 0.8,
+        status: 'idle',
+      },
+    ])
+  },
+
+  updateGenNode: (id, patch) =>
+    set((s) => {
+      const n = s.doc.nodes[id]
+      if (!n || n.kind !== 'gen') return s
+      return { doc: { ...s.doc, nodes: { ...s.doc.nodes, [id]: { ...n, ...patch } } } }
+    }),
+
   setNodePositions: (positions) =>
     set((s) => {
       const nodes = { ...s.doc.nodes }
@@ -133,7 +189,8 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => {
       const nodes = { ...s.doc.nodes }
       for (const id of s.selection) delete nodes[id]
-      return { doc: { ...s.doc, nodes }, selection: [] }
+      const edges = s.doc.edges.filter((e) => nodes[e.from] && nodes[e.to])
+      return { doc: { nodes, edges }, selection: [] }
     })
   },
 
@@ -141,14 +198,167 @@ export const useStore = create<AppState>()((set, get) => ({
     const { selection, doc } = get()
     if (!selection.length) return
     get().checkpoint()
+    const idMap: Record<string, string> = {}
     const clones = selection
       .map((id) => doc.nodes[id])
       .filter((n) => n !== undefined)
-      .map((n) => ({ ...n, id: uid(), x: n.x + 16, y: n.y + 16 }))
+      .map((n) => {
+        idMap[n.id] = uid()
+        return { ...n, id: idMap[n.id], x: n.x + 16, y: n.y + 16 }
+      })
+    const clonedEdges = doc.edges
+      .filter((e) => idMap[e.from] && idMap[e.to])
+      .map((e) => ({ ...e, id: uid(), from: idMap[e.from], to: idMap[e.to] }))
     set((s) => {
       const nodes = { ...s.doc.nodes }
       for (const n of clones) nodes[n.id] = n
-      return { doc: { ...s.doc, nodes }, selection: clones.map((n) => n.id) }
+      return {
+        doc: { nodes, edges: [...s.doc.edges, ...clonedEdges] },
+        selection: clones.map((n) => n.id),
+      }
     })
   },
+
+  connect: (from, to, port) => {
+    const { doc } = get()
+    const a = doc.nodes[from]
+    const b = doc.nodes[to]
+    if (!a || a.kind !== 'image' || !b || b.kind !== 'gen' || from === to) return
+    get().checkpoint()
+    set((s) => ({
+      doc: {
+        ...s.doc,
+        edges: [
+          ...s.doc.edges.filter((e) => !(e.to === to && e.port === port)),
+          { id: uid(), from, to, port },
+        ],
+      },
+    }))
+  },
+
+  disconnect: (to, port) => {
+    if (!get().doc.edges.some((e) => e.to === to && e.port === port)) return
+    get().checkpoint()
+    set((s) => ({
+      doc: { ...s.doc, edges: s.doc.edges.filter((e) => !(e.to === to && e.port === port)) },
+    }))
+  },
+
+  runGenerator: async (id) => {
+    const s = get()
+    const node = s.doc.nodes[id]
+    if (!node || node.kind !== 'gen' || node.status === 'running') return
+    if (!s.apiKey) {
+      set({ settingsOpen: true })
+      s.toast('Add your Retro Diffusion API key to generate', 'info')
+      return
+    }
+    if (!node.prompt.trim()) {
+      s.toast('Describe what to generate first', 'info')
+      return
+    }
+
+    const input = (port: InputPort) => {
+      const edge = s.doc.edges.find((e) => e.to === id && e.port === port)
+      const src = edge && s.doc.nodes[edge.from]
+      return src && src.kind === 'image' ? src.data.split(',')[1] : undefined
+    }
+
+    s.updateGenNode(id, { status: 'running', error: undefined })
+    try {
+      const result = await generate(s.apiKey, {
+        prompt: node.prompt.trim(),
+        style: node.style,
+        width: node.width,
+        height: node.height,
+        seed: node.seed ?? undefined,
+        inputImage: input('source'),
+        strength: node.strength,
+        inputPalette: input('palette'),
+      })
+
+      const gen = get().doc.nodes[id]
+      const at = gen ? { x: gen.x, y: gen.y } : { x: node.x, y: node.y }
+      const runs = get().doc.edges.filter((e) => e.from === id && e.port === 'output').length
+      const scale = displayScale(node.width, node.height)
+      const outputs: ImageNode[] = result.images.map((data, i) => ({
+        id: uid(),
+        kind: 'image',
+        x: at.x + GEN_W + 64 + runs * 20,
+        y: at.y + i * (node.height * scale + 40) + runs * 20,
+        w: node.width,
+        h: node.height,
+        scale,
+        name: node.prompt.trim().slice(0, 40),
+        data,
+        source: 'generated',
+      }))
+
+      get().checkpoint()
+      set((st) => {
+        const nodes = { ...st.doc.nodes }
+        for (const n of outputs) nodes[n.id] = n
+        const edges = [
+          ...st.doc.edges,
+          ...outputs.map((n) => ({ id: uid(), from: id, to: n.id, port: 'output' as const })),
+        ]
+        return { doc: { nodes, edges }, selection: outputs.map((n) => n.id) }
+      })
+      get().updateGenNode(id, { status: 'idle' })
+      if (result.remainingBalance != null) {
+        set((st) => ({ balance: { balance: result.remainingBalance!, credits: st.balance?.credits ?? 0 } }))
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Generation failed'
+      get().updateGenNode(id, { status: 'error', error: message })
+      get().toast(message)
+    }
+  },
+
+  setApiKey: (key) => {
+    localStorage.setItem(API_KEY_STORAGE, key)
+    set({ apiKey: key, balance: null })
+    if (key) void get().refreshBalance()
+  },
+
+  refreshBalance: async () => {
+    const { apiKey, toast } = get()
+    if (!apiKey) return
+    try {
+      set({ balance: await getBalance(apiKey) })
+    } catch (err) {
+      set({ balance: null })
+      toast(err instanceof Error ? err.message : 'Could not reach Retro Diffusion')
+    }
+  },
+
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
+
+  toast: (text, kind = 'error') => {
+    const id = uid()
+    set((s) => ({ toasts: [...s.toasts, { id, text, kind }] }))
+    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 5000)
+  },
 }))
+
+export function centerOfCanvas(el: HTMLElement): Vec {
+  const { x, y, zoom } = useStore.getState().viewport
+  return { x: (el.clientWidth / 2 - x) / zoom, y: (el.clientHeight / 2 - y) / zoom }
+}
+
+export function contentBounds(doc: Doc) {
+  const nodes = Object.values(doc.nodes)
+  if (!nodes.length) return null
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const n of nodes) {
+    const b = nodeBounds(n)
+    minX = Math.min(minX, b.x)
+    minY = Math.min(minY, b.y)
+    maxX = Math.max(maxX, b.x + b.w)
+    maxY = Math.max(maxY, b.y + b.h)
+  }
+  return { minX, minY, maxX, maxY }
+}
