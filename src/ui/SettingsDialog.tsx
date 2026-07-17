@@ -54,6 +54,18 @@ function SettingsForm() {
           . It never leaves this browser.
         </p>
         <div className="dialog-actions">
+          <button
+            className="btn danger"
+            onClick={() => {
+              if (window.confirm('Remove everything from the canvas?')) {
+                useStore.getState().clearDoc()
+                setOpen(false)
+              }
+            }}
+          >
+            Clear canvas
+          </button>
+          <div className="topbar-spacer" />
           <button className="btn" onClick={() => setOpen(false)}>
             Cancel
           </button>

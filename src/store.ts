@@ -1,16 +1,13 @@
 import { create } from 'zustand'
-import type { CanvasNode, Doc, GenNode, ImageNode, InputPort, Vec } from './types'
+import type { CanvasNode, Doc, GenNode, ImageNode, InputPort, Vec, Viewport } from './types'
 import { GEN_W, nodeBounds } from './types'
 import { DEFAULT_STYLE } from './api/styles'
 import { generate, getBalance, type Balance } from './api/retro'
 import { displayScale } from './lib/image'
+import { loadStored, saveStored } from './lib/persist'
 import { clamp, uid } from './lib/util'
 
-export interface Viewport {
-  x: number
-  y: number
-  zoom: number
-}
+export type { Viewport } from './types'
 
 export const MIN_ZOOM = 0.1
 export const MAX_ZOOM = 8
@@ -54,6 +51,7 @@ interface AppState {
   renameNode: (id: string, name: string) => void
   deleteSelection: () => void
   duplicateSelection: () => void
+  clearDoc: () => void
 
   connect: (from: string, to: string, port: InputPort) => void
   disconnect: (to: string, port: InputPort) => void
@@ -70,9 +68,11 @@ interface AppState {
   toast: (text: string, kind?: Toast['kind']) => void
 }
 
+const stored = loadStored()
+
 export const useStore = create<AppState>()((set, get) => ({
-  viewport: { x: 0, y: 0, zoom: 1 },
-  doc: { nodes: {}, edges: [] },
+  viewport: stored?.viewport ?? { x: 0, y: 0, zoom: 1 },
+  doc: stored?.doc ?? { nodes: {}, edges: [] },
   selection: [],
   past: [],
   future: [],
@@ -224,6 +224,12 @@ export const useStore = create<AppState>()((set, get) => ({
         selection: clones.map((n) => n.id),
       }
     })
+  },
+
+  clearDoc: () => {
+    if (!Object.keys(get().doc.nodes).length) return
+    get().checkpoint()
+    set({ doc: { nodes: {}, edges: [] }, selection: [], editing: null })
   },
 
   connect: (from, to, port) => {
@@ -385,6 +391,27 @@ export const useStore = create<AppState>()((set, get) => ({
     setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 5000)
   },
 }))
+
+let saveTimer: number | undefined
+let warnedStorage = false
+
+useStore.subscribe((s, prev) => {
+  if (s.doc === prev.doc) return
+  clearTimeout(saveTimer)
+  saveTimer = window.setTimeout(() => {
+    if (saveStored(s.doc, useStore.getState().viewport)) {
+      warnedStorage = false
+    } else if (!warnedStorage) {
+      warnedStorage = true
+      useStore.getState().toast('Browser storage is full — recent changes may not persist')
+    }
+  }, 500)
+})
+
+window.addEventListener('beforeunload', () => {
+  const s = useStore.getState()
+  saveStored(s.doc, s.viewport)
+})
 
 export function centerOfCanvas(el: HTMLElement): Vec {
   const { x, y, zoom } = useStore.getState().viewport

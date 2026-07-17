@@ -3,7 +3,9 @@ import type { CanvasNode, GenNode, ImageNode } from '../types'
 import { GEN_PORT_Y, GEN_W } from '../types'
 import { useStore } from '../store'
 import { STYLE_GROUPS } from '../api/styles'
+import { downloadPng } from '../lib/image'
 import { clamp } from '../lib/util'
+import { IconDownload } from '../ui/icons'
 
 function NodeName({ node }: { node: CanvasNode }) {
   const renameNode = useStore((s) => s.renameNode)
@@ -43,6 +45,37 @@ function NodeName({ node }: { node: CanvasNode }) {
   )
 }
 
+function ExportButton({ node }: { node: ImageNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="node-export" data-no-drag>
+      <button
+        className="node-action"
+        title="Export PNG"
+        onClick={() => setOpen((v) => !v)}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+      >
+        <IconDownload />
+      </button>
+      {open && (
+        <div className="export-menu">
+          {[1, 4, 8].map((f) => (
+            <button
+              key={f}
+              onClick={() => {
+                setOpen(false)
+                void downloadPng(node.data, node.name, node.w, node.h, f)
+              }}
+            >
+              {f}× <span>{node.w * f}×{node.h * f}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
 function ImageNodeView({ node, selected }: { node: ImageNode; selected: boolean }) {
   const w = node.w * node.scale
   const h = node.h * node.scale
@@ -54,6 +87,7 @@ function ImageNodeView({ node, selected }: { node: ImageNode; selected: boolean 
     >
       <div className="node-head">
         <NodeName node={node} />
+        <ExportButton node={node} />
         <span className="node-dims">
           {node.w}×{node.h}
         </span>

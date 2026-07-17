@@ -3,6 +3,12 @@ export interface Vec {
   y: number
 }
 
+export interface Viewport {
+  x: number
+  y: number
+  zoom: number
+}
+
 export type NodeSource = 'import' | 'generated' | 'drawing'
 
 export interface ImageNode {
