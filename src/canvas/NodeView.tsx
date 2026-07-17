@@ -212,6 +212,7 @@ function GenNodeView({ node, selected }: { node: GenNode; selected: boolean }) {
         <button className="gen-run" disabled={running} onClick={() => void run(node.id)}>
           {running ? 'Generating…' : 'Generate'}
         </button>
+        {node.status === 'error' && node.error && <div className="gen-error">{node.error}</div>}
       </div>
       <div
         className="port port-in"

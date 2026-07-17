@@ -440,6 +440,12 @@ button {
   cursor: default;
 }
 
+.gen-error {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--danger);
+}
+
 /* ---------- ports and edges ---------- */
 
 .port {
