@@ -144,6 +144,80 @@ button {
   background: var(--surface-2);
 }
 
+/* ---------- nodes ---------- */
+
+.node {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
+
+.node.selected {
+  outline: calc(1.5px / var(--z, 1)) solid var(--accent);
+  outline-offset: calc(1px / var(--z, 1));
+}
+
+.node-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.node-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 0 2px;
+  margin-left: -3px;
+  font-size: 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  outline: none;
+}
+
+.node-dims {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+.node-body {
+  border-radius: 0 0 3px 3px;
+  overflow: hidden;
+}
+
+.checker {
+  background: repeating-conic-gradient(var(--checker-b) 0% 25%, var(--checker-a) 0% 50%);
+  background-size: 12px 12px;
+}
+
+.image-node img {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.marquee {
+  position: absolute;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+
 .empty-hint {
   position: absolute;
   inset: 0;
