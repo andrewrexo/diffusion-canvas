@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import type { CanvasNode, Doc, GenNode, ImageNode, InputPort, Vec, Viewport } from './types'
 import { GEN_W, nodeBounds } from './types'
-import { DEFAULT_STYLE } from './api/styles'
+import { DEFAULT_STYLE, isAnimationStyle } from './api/styles'
 import { generate, getBalance, type Balance } from './api/retro'
-import { displayScale } from './lib/image'
+import { displayScale, sliceSpritesheet } from './lib/image'
 import { loadStored, saveStored } from './lib/persist'
 import { clamp, uid } from './lib/util'
 
@@ -158,6 +158,7 @@ export const useStore = create<AppState>()((set, get) => ({
         height: 128,
         seed: null,
         strength: 0.8,
+        frames: 4,
         status: 'idle',
       },
     ])
@@ -277,6 +278,7 @@ export const useStore = create<AppState>()((set, get) => ({
       return src && src.kind === 'image' ? src.frames[0].split(',')[1] : undefined
     }
 
+    const animation = isAnimationStyle(node.style)
     s.updateGenNode(id, { status: 'running', error: undefined })
     try {
       const result = await generate(s.apiKey, {
@@ -288,25 +290,52 @@ export const useStore = create<AppState>()((set, get) => ({
         inputImage: input('source'),
         strength: node.strength,
         inputPalette: input('palette'),
+        returnSpritesheet: animation || undefined,
+        framesDuration: animation ? node.frames : undefined,
       })
 
       const gen = get().doc.nodes[id]
       const at = gen ? { x: gen.x, y: gen.y } : { x: node.x, y: node.y }
       const runs = get().doc.edges.filter((e) => e.from === id && e.port === 'output').length
-      const scale = displayScale(node.width, node.height)
-      const outputs: ImageNode[] = result.images.map((data, i) => ({
-        id: uid(),
-        kind: 'image',
+      const name = node.prompt.trim().slice(0, 40)
+      const place = (i: number, h: number, scale: number) => ({
         x: at.x + GEN_W + 64 + runs * 20,
-        y: at.y + i * (node.height * scale + 40) + runs * 20,
-        w: node.width,
-        h: node.height,
-        scale,
-        name: node.prompt.trim().slice(0, 40),
-        frames: [data],
-        fps: 8,
-        source: 'generated',
-      }))
+        y: at.y + i * (h * scale + 40) + runs * 20,
+      })
+
+      let outputs: ImageNode[]
+      if (animation && result.images.length) {
+        const sheet = await sliceSpritesheet(result.images[0], node.frames)
+        const scale = displayScale(sheet.w, sheet.h)
+        outputs = [
+          {
+            id: uid(),
+            kind: 'image',
+            ...place(0, sheet.h, scale),
+            w: sheet.w,
+            h: sheet.h,
+            scale,
+            name,
+            frames: sheet.frames,
+            fps: 8,
+            source: 'generated',
+          },
+        ]
+      } else {
+        const scale = displayScale(node.width, node.height)
+        outputs = result.images.map((data, i) => ({
+          id: uid(),
+          kind: 'image',
+          ...place(i, node.height, scale),
+          w: node.width,
+          h: node.height,
+          scale,
+          name,
+          frames: [data],
+          fps: 8,
+          source: 'generated',
+        }))
+      }
 
       get().checkpoint()
       set((st) => {

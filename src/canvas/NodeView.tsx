@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CanvasNode, GenNode, ImageNode } from '../types'
 import { GEN_PORT_Y, GEN_W } from '../types'
 import { useStore } from '../store'
-import { STYLE_GROUPS } from '../api/styles'
+import { ANIMATION_FRAME_COUNTS, isAnimationStyle, STYLE_GROUPS } from '../api/styles'
 import { downloadPng, loadImage } from '../lib/image'
 import { clamp } from '../lib/util'
 import { IconDownload } from '../ui/icons'
@@ -234,6 +234,23 @@ function GenNodeView({ node, selected }: { node: GenNode; selected: boolean }) {
             onKeyDown={(e) => e.stopPropagation()}
           />
         </div>
+        {isAnimationStyle(node.style) && (
+          <div className="gen-row">
+            <label className="gen-label">Frames</label>
+            <select
+              className="gen-frames"
+              data-no-drag
+              value={node.frames}
+              onChange={(e) => update(node.id, { frames: parseInt(e.target.value, 10) })}
+            >
+              {ANIMATION_FRAME_COUNTS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {hasSource && (
           <div className="gen-row">
             <label className="gen-label" title="How far the result may drift from the source image">

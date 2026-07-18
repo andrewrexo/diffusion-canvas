@@ -35,6 +35,27 @@ export function displayScale(w: number, h: number) {
   return clamp(2 ** Math.round(Math.log2(224 / m)), 0.125, 8)
 }
 
+export async function sliceSpritesheet(
+  data: string,
+  count: number
+): Promise<{ frames: string[]; w: number; h: number }> {
+  const img = await loadImage(data)
+  const fw = img.naturalWidth / count
+  if (count < 2 || !Number.isInteger(fw)) {
+    return { frames: [data], w: img.naturalWidth, h: img.naturalHeight }
+  }
+  const canvas = document.createElement('canvas')
+  canvas.width = fw
+  canvas.height = img.naturalHeight
+  const ctx = canvas.getContext('2d')!
+  const frames = Array.from({ length: count }, (_, i) => {
+    ctx.clearRect(0, 0, fw, canvas.height)
+    ctx.drawImage(img, -i * fw, 0)
+    return canvas.toDataURL('image/png')
+  })
+  return { frames, w: fw, h: img.naturalHeight }
+}
+
 export async function downloadPng(data: string, name: string, w: number, h: number, factor: number) {
   const img = await loadImage(data)
   const canvas = document.createElement('canvas')

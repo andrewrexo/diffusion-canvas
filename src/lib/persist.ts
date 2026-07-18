@@ -19,6 +19,7 @@ export function loadStored(): { doc: Doc; viewport: Viewport } | null {
       if (n.kind === 'gen') {
         n.status = 'idle'
         delete n.error
+        n.frames ??= 4
       } else {
         /* v1 stored a single `data` url per image node */
         const legacy = n as ImageNode & { data?: string }

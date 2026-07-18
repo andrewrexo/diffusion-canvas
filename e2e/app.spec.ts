@@ -3,6 +3,10 @@ import { test, expect, type Page } from '@playwright/test'
 const PNG_1PX =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
 
+/* 16×4 sheet: four 4×4 frames in distinct colors */
+const SHEET_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAECAYAAACHtL/sAAAANklEQVR4AcTMoQ0AIAwFUdKpSEhYAo1jBQZDMQOCma72+4pe8uzZ6QNV70K1+VD8jbISLH/gAAAA//+oiGf6AAAABklEQVQDAN1NKNWx+pxIAAAAAElFTkSuQmCC'
+
 async function dropSprite(page: Page, x: number, y: number) {
   await page.locator('.canvas').evaluate(
     async (el, pos) => {
@@ -129,6 +133,33 @@ test('generates through the node graph with a mocked API', async ({ page }) => {
   await expect(page.locator('.edge-layer path.edge-output')).toHaveCount(1)
   await expect(page.locator('.image-node.selected .node-name')).toHaveText('test sprite')
   await expect(page.locator('.chip')).toHaveText('$4.99')
+})
+
+test('animation styles produce multi-frame nodes from spritesheets', async ({ page }) => {
+  let requestBody: Record<string, unknown> = {}
+  await page.route('**/api/rd/v1/inferences/credits', (route) =>
+    route.fulfill({ json: { credits: 0, balance: 5 } })
+  )
+  await page.route('**/api/rd/v1/inferences', (route) => {
+    requestBody = route.request().postDataJSON() as Record<string, unknown>
+    return route.fulfill({
+      json: { base64_images: [SHEET_PNG], balance_cost: 0.03, remaining_balance: 4.97 },
+    })
+  })
+
+  await page.mouse.dblclick(700, 400)
+  await page.selectOption('.gen-style', 'rd_animation__any_animation')
+  await expect(page.locator('.gen-frames')).toHaveValue('4')
+  await page.fill('.gen-prompt', 'walking knight')
+  await page.click('button[title="Settings"]')
+  await page.fill('.field input', 'rdpk-e2e-test')
+  await page.click('.dialog-actions .btn.primary')
+
+  await page.click('.gen-run')
+  await expect(page.locator('.image-node')).toHaveCount(1)
+  await expect(page.locator('.image-node .node-dims')).toHaveText('4×4 · 4f')
+  expect(requestBody.return_spritesheet).toBe(true)
+  expect(requestBody.frames_duration).toBe(4)
 })
 
 test('surfaces API errors on the generator card', async ({ page }) => {

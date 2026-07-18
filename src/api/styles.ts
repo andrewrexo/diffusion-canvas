@@ -12,6 +12,11 @@ const style = (id: string, label: string): StyleOption => ({ id, label })
 
 export const DEFAULT_STYLE = 'rd_plus__default'
 
+export const ANIMATION_FRAME_COUNTS = [4, 6, 8, 10, 12, 16]
+
+export const isAnimationStyle = (id: string) =>
+  id.startsWith('rd_animation') || id.startsWith('rd_advanced_animation')
+
 export const STYLE_GROUPS: StyleGroup[] = [
   {
     label: 'RD Plus',
@@ -50,6 +55,19 @@ export const STYLE_GROUPS: StyleGroup[] = [
       style('rd_fast__character_turnaround', 'Character turnaround'),
       style('rd_fast__1_bit', '1-bit'),
       style('rd_fast__low_res', 'Low res'),
+    ],
+  },
+  {
+    label: 'Animation',
+    options: [
+      style('rd_animation__any_animation', 'Any animation'),
+      style('rd_animation__battle_sprites', 'Battle sprites'),
+      style('rd_animation__vfx', 'VFX'),
+      style('rd_animation__four_angle_walking', 'Four-angle walking'),
+      style('rd_animation__small_sprites', 'Small sprites'),
+      style('rd_advanced_animation__walking', 'Walking (from image)'),
+      style('rd_advanced_animation__idle', 'Idle (from image)'),
+      style('rd_advanced_animation__attack', 'Attack (from image)'),
     ],
   },
   {

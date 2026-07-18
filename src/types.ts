@@ -37,6 +37,7 @@ export interface GenNode {
   height: number
   seed: number | null
   strength: number
+  frames: number
   status: 'idle' | 'running' | 'error'
   error?: string
 }

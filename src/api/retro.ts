@@ -9,6 +9,8 @@ export interface GenerateRequest {
   inputImage?: string
   strength?: number
   inputPalette?: string
+  returnSpritesheet?: boolean
+  framesDuration?: number
 }
 
 export interface GenerateResult {
@@ -58,6 +60,10 @@ export async function generate(apiKey: string, req: GenerateRequest): Promise<Ge
     body.strength = req.strength ?? 0.8
   }
   if (req.inputPalette) body.input_palette = req.inputPalette
+  if (req.returnSpritesheet) {
+    body.return_spritesheet = true
+    body.frames_duration = req.framesDuration ?? 4
+  }
 
   const res = await fetch(`${BASE}/inferences`, {
     method: 'POST',

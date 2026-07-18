@@ -29,6 +29,7 @@ const genNode = (id: string): GenNode => ({
   height: 128,
   seed: null,
   strength: 0.8,
+  frames: 4,
   status: 'idle',
 })
 
