@@ -37,6 +37,20 @@ calls go through Vite's dev-server proxy, so there are no CORS issues and no bac
 Press `?` in the app for keyboard shortcuts — most of the canvas is driveable without the
 mouse leaving the node you're working on.
 
+## Deploying
+
+The repo is set up for [Cloudflare Pages](https://pages.cloudflare.com): the static build plus a
+small Pages Function (`functions/api/rd/[[path]].ts`) that proxies API calls to Retro Diffusion,
+mirroring what the Vite dev proxy does locally. API keys pass through per-request and are never
+stored server-side.
+
+```sh
+bun run deploy
+```
+
+The first run will prompt `wrangler` to log in and create the project. You can also connect the
+repo in the Cloudflare dashboard to deploy on every push.
+
 ## Stack
 
 React 19, TypeScript, Zustand, and Vite. The canvas, node graph, and pixel editor are
