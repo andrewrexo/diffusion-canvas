@@ -1,5 +1,7 @@
 # Diffusion Canvas
 
+[![CI](https://github.com/andrewrexo/diffusion-canvas/actions/workflows/ci.yml/badge.svg)](https://github.com/andrewrexo/diffusion-canvas/actions/workflows/ci.yml)
+
 An infinite canvas for making pixel art with [Retro Diffusion](https://retrodiffusion.ai).
 
 ![Diffusion Canvas](docs/screenshot.png)
@@ -36,6 +38,15 @@ calls go through Vite's dev-server proxy, so there are no CORS issues and no bac
 
 Press `?` in the app for keyboard shortcuts — most of the canvas is driveable without the
 mouse leaving the node you're working on.
+
+## Testing
+
+`bun run test` covers the pure parts with Vitest: the drawing algorithms (Bresenham lines,
+flood fill, brushes), palette extraction, and the store's undo history and graph edge rules.
+
+`bun run e2e` drives the real UI with Playwright — drawing in the editor, wiring ports, and a
+full generation round-trip against a mocked API, so no key or network is needed. CI runs lint,
+both suites, and the production build on every push.
 
 ## Deploying
 

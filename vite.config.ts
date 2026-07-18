@@ -1,5 +1,4 @@
-/// <reference types="vitest/config" />
-import { defineConfig } from 'vite'
+import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 const rdProxy = {
@@ -16,5 +15,6 @@ export default defineConfig({
   preview: { proxy: rdProxy },
   test: {
     setupFiles: ['./vitest.setup.ts'],
+    exclude: [...configDefaults.exclude, 'e2e/**'],
   },
 })
