@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { test, expect, type Page } from '@playwright/test'
 
 const PNG_1PX =
@@ -160,6 +161,52 @@ test('animation styles produce multi-frame nodes from spritesheets', async ({ pa
   await expect(page.locator('.image-node .node-dims')).toHaveText('4×4 · 4f')
   expect(requestBody.return_spritesheet).toBe(true)
   expect(requestBody.frames_duration).toBe(4)
+})
+
+test('exports an animation as a decodable GIF', async ({ page }) => {
+  await page.route('**/api/rd/v1/inferences/credits', (route) =>
+    route.fulfill({ json: { credits: 0, balance: 5 } })
+  )
+  await page.route('**/api/rd/v1/inferences', (route) =>
+    route.fulfill({
+      json: { base64_images: [SHEET_PNG], balance_cost: 0.03, remaining_balance: 4.97 },
+    })
+  )
+  await page.mouse.dblclick(700, 400)
+  await page.selectOption('.gen-style', 'rd_animation__any_animation')
+  await page.fill('.gen-prompt', 'walking knight')
+  await page.click('button[title="Settings"]')
+  await page.fill('.field input', 'rdpk-e2e-test')
+  await page.click('.dialog-actions .btn.primary')
+  await page.click('.gen-run')
+  await expect(page.locator('.image-node')).toHaveCount(1)
+
+  await page.hover('.image-node')
+  await page.click('.image-node .node-action')
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.click('.export-menu button:has-text("GIF 4×")'),
+  ])
+  expect(download.suggestedFilename()).toBe('walking knight@4x.gif')
+
+  const buf = readFileSync((await download.path())!)
+  expect(buf.subarray(0, 6).toString('latin1')).toBe('GIF89a')
+  expect(buf[buf.length - 1]).toBe(0x3b)
+
+  interface Decoderish {
+    tracks: { ready: Promise<void>; selectedTrack: { frameCount: number } }
+  }
+  const frameCount = await page.evaluate(async (b64) => {
+    const g = globalThis as unknown as {
+      ImageDecoder?: new (init: { data: Uint8Array; type: string }) => Decoderish
+    }
+    if (!g.ImageDecoder) return -1
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+    const decoder = new g.ImageDecoder({ data: bytes, type: 'image/gif' })
+    await decoder.tracks.ready
+    return decoder.tracks.selectedTrack.frameCount
+  }, buf.toString('base64'))
+  expect(frameCount).toBe(4)
 })
 
 test('surfaces API errors on the generator card', async ({ page }) => {

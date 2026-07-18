@@ -22,7 +22,12 @@ bouncing between a prompt box and an image editor.
   flood fill, line, rectangle, and eyedropper, with brush sizes, the image's extracted color
   palette, Sweetie 16, and per-session undo. Save writes back to the node, so a touched-up
   sprite can go straight back into another generation.
-- Projects autosave to the browser. Any image exports as PNG at 1×, 4×, or 8×.
+- **Animation is built in.** Animation styles return spritesheets that land as multi-frame
+  nodes and play live on the canvas. The editor grows a frame timeline with onion skinning and
+  playback, so generated animations can be retimed and touched up frame by frame — and any
+  drawing can become an animation.
+- Projects autosave to the browser. Stills export as PNG at 1×/4×/8×; animations export as
+  looping GIFs (via a dependency-free GIF89a encoder in `src/lib/gif.ts`) or spritesheet strips.
 
 ## Running it
 
@@ -42,7 +47,8 @@ mouse leaving the node you're working on.
 ## Testing
 
 `bun run test` covers the pure parts with Vitest: the drawing algorithms (Bresenham lines,
-flood fill, brushes), palette extraction, and the store's undo history and graph edge rules.
+flood fill, brushes), palette extraction, the GIF encoder (structural checks plus an LZW
+round-trip against a reference decoder), and the store's undo history and graph edge rules.
 
 `bun run e2e` drives the real UI with Playwright — drawing in the editor, wiring ports, and a
 full generation round-trip against a mocked API, so no key or network is needed. CI runs lint,

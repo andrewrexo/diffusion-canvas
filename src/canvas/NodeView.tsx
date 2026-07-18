@@ -3,7 +3,7 @@ import type { CanvasNode, GenNode, ImageNode } from '../types'
 import { GEN_PORT_Y, GEN_W } from '../types'
 import { useStore } from '../store'
 import { ANIMATION_FRAME_COUNTS, isAnimationStyle, STYLE_GROUPS } from '../api/styles'
-import { downloadPng, loadImage } from '../lib/image'
+import { downloadGif, downloadPng, downloadSheet, loadImage } from '../lib/image'
 import { clamp } from '../lib/util'
 import { IconDownload } from '../ui/icons'
 
@@ -89,11 +89,32 @@ function NodeName({ node }: { node: CanvasNode }) {
 
 function ExportButton({ node }: { node: ImageNode }) {
   const [open, setOpen] = useState(false)
+  const animated = node.frames.length > 1
+
+  const options = animated
+    ? ([1, 4] as const).flatMap((f) => [
+        {
+          label: `GIF ${f}×`,
+          hint: `${node.w * f}×${node.h * f}`,
+          run: () => downloadGif(node.frames, node.name, node.w, node.h, node.fps, f),
+        },
+        {
+          label: `Sheet ${f}×`,
+          hint: `${node.w * node.frames.length * f}×${node.h * f}`,
+          run: () => downloadSheet(node.frames, node.name, node.w, node.h, f),
+        },
+      ])
+    : [1, 4, 8].map((f) => ({
+        label: `PNG ${f}×`,
+        hint: `${node.w * f}×${node.h * f}`,
+        run: () => downloadPng(node.frames[0], node.name, node.w, node.h, f),
+      }))
+
   return (
     <span className="node-export" data-no-drag>
       <button
         className="node-action"
-        title="Export PNG"
+        title={animated ? 'Export GIF or spritesheet' : 'Export PNG'}
         onClick={() => setOpen((v) => !v)}
         onBlur={() => setTimeout(() => setOpen(false), 120)}
       >
@@ -101,15 +122,15 @@ function ExportButton({ node }: { node: ImageNode }) {
       </button>
       {open && (
         <div className="export-menu">
-          {[1, 4, 8].map((f) => (
+          {options.map((o) => (
             <button
-              key={f}
+              key={o.label}
               onClick={() => {
                 setOpen(false)
-                void downloadPng(node.frames[0], node.name, node.w, node.h, f)
+                void o.run()
               }}
             >
-              {f}× <span>{node.w * f}×{node.h * f}</span>
+              {o.label} <span>{o.hint}</span>
             </button>
           ))}
         </div>

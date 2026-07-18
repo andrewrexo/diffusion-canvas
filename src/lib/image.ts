@@ -1,3 +1,4 @@
+import { encodeGif } from './gif'
 import { clamp } from './util'
 
 const MAX_IMPORT_DIM = 1024
@@ -56,6 +57,17 @@ export async function sliceSpritesheet(
   return { frames, w: fw, h: img.naturalHeight }
 }
 
+const safeName = (name: string) => name.replace(/[^\w\- ]+/g, '').trim() || 'pixel-art'
+
+const suffix = (factor: number) => (factor > 1 ? `@${factor}x` : '')
+
+function downloadUrl(url: string, filename: string) {
+  const link = document.createElement('a')
+  link.download = filename
+  link.href = url
+  link.click()
+}
+
 export async function downloadPng(data: string, name: string, w: number, h: number, factor: number) {
   const img = await loadImage(data)
   const canvas = document.createElement('canvas')
@@ -64,9 +76,50 @@ export async function downloadPng(data: string, name: string, w: number, h: numb
   const ctx = canvas.getContext('2d')!
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-  const link = document.createElement('a')
-  const safe = name.replace(/[^\w\- ]+/g, '').trim() || 'pixel-art'
-  link.download = factor > 1 ? `${safe}@${factor}x.png` : `${safe}.png`
-  link.href = canvas.toDataURL('image/png')
-  link.click()
+  downloadUrl(canvas.toDataURL('image/png'), `${safeName(name)}${suffix(factor)}.png`)
+}
+
+async function scaledFrames(frames: string[], w: number, h: number, factor: number) {
+  const canvas = document.createElement('canvas')
+  canvas.width = w * factor
+  canvas.height = h * factor
+  const ctx = canvas.getContext('2d')!
+  ctx.imageSmoothingEnabled = false
+  const images = await Promise.all(frames.map(loadImage))
+  return images.map((img) => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    return ctx.getImageData(0, 0, canvas.width, canvas.height)
+  })
+}
+
+export async function downloadGif(
+  frames: string[],
+  name: string,
+  w: number,
+  h: number,
+  fps: number,
+  factor: number
+) {
+  const bytes = encodeGif(await scaledFrames(frames, w, h, factor), fps)
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'image/gif' }))
+  downloadUrl(url, `${safeName(name)}${suffix(factor)}.gif`)
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
+export async function downloadSheet(
+  frames: string[],
+  name: string,
+  w: number,
+  h: number,
+  factor: number
+) {
+  const canvas = document.createElement('canvas')
+  canvas.width = w * factor * frames.length
+  canvas.height = h * factor
+  const ctx = canvas.getContext('2d')!
+  ctx.imageSmoothingEnabled = false
+  const images = await Promise.all(frames.map(loadImage))
+  images.forEach((img, i) => ctx.drawImage(img, i * w * factor, 0, w * factor, h * factor))
+  downloadUrl(canvas.toDataURL('image/png'), `${safeName(name)}-sheet${suffix(factor)}.png`)
 }
