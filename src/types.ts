@@ -20,7 +20,8 @@ export interface ImageNode {
   h: number
   scale: number
   name: string
-  data: string
+  frames: string[]
+  fps: number
   source: NodeSource
 }
 

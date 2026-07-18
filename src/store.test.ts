@@ -12,7 +12,8 @@ const imageNode = (id: string): ImageNode => ({
   h: 16,
   scale: 4,
   name: id,
-  data: 'data:image/png;base64,',
+  frames: ['data:image/png;base64,'],
+  fps: 8,
   source: 'import',
 })
 

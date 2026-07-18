@@ -303,7 +303,7 @@ button {
   background-size: 12px 12px;
 }
 
-.image-node img {
+.node-img {
   display: block;
   image-rendering: pixelated;
 }

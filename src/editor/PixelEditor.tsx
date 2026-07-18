@@ -231,12 +231,13 @@ export function PixelEditor({ id }: { id: string }) {
 
   const save = () => {
     const img = imgRef.current
-    if (!img) return
+    const n = useStore.getState().doc.nodes[id]
+    if (!img || !n || n.kind !== 'image') return
     const c = document.createElement('canvas')
     c.width = img.width
     c.height = img.height
     c.getContext('2d')!.putImageData(img, 0, 0)
-    useStore.getState().commitDrawing(id, c.toDataURL('image/png'))
+    useStore.getState().commitFrames(id, [c.toDataURL('image/png')], n.fps)
     useStore.getState().closeEditor()
   }
 
@@ -271,7 +272,7 @@ export function PixelEditor({ id }: { id: string }) {
       useStore.getState().closeEditor()
       return
     }
-    void loadImage(n.data).then((el) => {
+    void loadImage(n.frames[0]).then((el) => {
       if (!live) return
       const c = document.createElement('canvas')
       c.width = n.w

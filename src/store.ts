@@ -59,7 +59,7 @@ interface AppState {
 
   openEditor: (id: string) => void
   closeEditor: () => void
-  commitDrawing: (id: string, data: string) => void
+  commitFrames: (id: string, frames: string[], fps: number) => void
   addDrawingNode: (at: Vec) => void
 
   setApiKey: (key: string) => void
@@ -274,7 +274,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const input = (port: InputPort) => {
       const edge = s.doc.edges.find((e) => e.to === id && e.port === port)
       const src = edge && s.doc.nodes[edge.from]
-      return src && src.kind === 'image' ? src.data.split(',')[1] : undefined
+      return src && src.kind === 'image' ? src.frames[0].split(',')[1] : undefined
     }
 
     s.updateGenNode(id, { status: 'running', error: undefined })
@@ -303,7 +303,8 @@ export const useStore = create<AppState>()((set, get) => ({
         h: node.height,
         scale,
         name: node.prompt.trim().slice(0, 40),
-        data,
+        frames: [data],
+        fps: 8,
         source: 'generated',
       }))
 
@@ -335,12 +336,12 @@ export const useStore = create<AppState>()((set, get) => ({
 
   closeEditor: () => set({ editing: null }),
 
-  commitDrawing: (id, data) => {
+  commitFrames: (id, frames, fps) => {
     const n = get().doc.nodes[id]
-    if (!n || n.kind !== 'image') return
+    if (!n || n.kind !== 'image' || !frames.length) return
     get().checkpoint()
     set((s) => ({
-      doc: { ...s.doc, nodes: { ...s.doc.nodes, [id]: { ...n, data } } },
+      doc: { ...s.doc, nodes: { ...s.doc.nodes, [id]: { ...n, frames, fps } } },
     }))
   },
 
@@ -359,7 +360,8 @@ export const useStore = create<AppState>()((set, get) => ({
       h: size,
       scale,
       name: 'Drawing',
-      data: canvas.toDataURL('image/png'),
+      frames: [canvas.toDataURL('image/png')],
+      fps: 8,
       source: 'drawing',
     }
     get().addNodes([node])

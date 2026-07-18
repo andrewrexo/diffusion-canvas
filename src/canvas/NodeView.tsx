@@ -1,11 +1,53 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CanvasNode, GenNode, ImageNode } from '../types'
 import { GEN_PORT_Y, GEN_W } from '../types'
 import { useStore } from '../store'
 import { STYLE_GROUPS } from '../api/styles'
-import { downloadPng } from '../lib/image'
+import { downloadPng, loadImage } from '../lib/image'
 import { clamp } from '../lib/util'
 import { IconDownload } from '../ui/icons'
+
+function FramePreview({ node }: { node: ImageNode }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    let raf = 0
+    let cancelled = false
+    void Promise.all(node.frames.map(loadImage)).then((imgs) => {
+      const canvas = ref.current
+      if (cancelled || !canvas) return
+      canvas.width = node.w
+      canvas.height = node.h
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(imgs[0], 0, 0)
+      if (imgs.length < 2) return
+      let idx = 0
+      let last = 0
+      const tick = (t: number) => {
+        if (t - last >= 1000 / node.fps) {
+          last = t
+          idx = (idx + 1) % imgs.length
+          ctx.clearRect(0, 0, node.w, node.h)
+          ctx.drawImage(imgs[idx], 0, 0)
+        }
+        raf = requestAnimationFrame(tick)
+      }
+      raf = requestAnimationFrame(tick)
+    })
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf)
+    }
+  }, [node.frames, node.fps, node.w, node.h])
+
+  return (
+    <canvas
+      ref={ref}
+      className="node-img"
+      style={{ width: node.w * node.scale, height: node.h * node.scale }}
+    />
+  )
+}
 
 function NodeName({ node }: { node: CanvasNode }) {
   const renameNode = useStore((s) => s.renameNode)
@@ -64,7 +106,7 @@ function ExportButton({ node }: { node: ImageNode }) {
               key={f}
               onClick={() => {
                 setOpen(false)
-                void downloadPng(node.data, node.name, node.w, node.h, f)
+                void downloadPng(node.frames[0], node.name, node.w, node.h, f)
               }}
             >
               {f}× <span>{node.w * f}×{node.h * f}</span>
@@ -78,7 +120,6 @@ function ExportButton({ node }: { node: ImageNode }) {
 
 function ImageNodeView({ node, selected }: { node: ImageNode; selected: boolean }) {
   const w = node.w * node.scale
-  const h = node.h * node.scale
   return (
     <div
       className={`node image-node${selected ? ' selected' : ''}`}
@@ -90,10 +131,11 @@ function ImageNodeView({ node, selected }: { node: ImageNode; selected: boolean 
         <ExportButton node={node} />
         <span className="node-dims">
           {node.w}×{node.h}
+          {node.frames.length > 1 && ` · ${node.frames.length}f`}
         </span>
       </div>
       <div className="node-body checker">
-        <img src={node.data} width={w} height={h} draggable={false} alt={node.name} />
+        <FramePreview node={node} />
       </div>
       <div className="port port-out" data-port="output" title="Drag to a generator input" />
     </div>

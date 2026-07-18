@@ -161,7 +161,8 @@ export function CanvasView() {
           h,
           scale,
           name: file.name ? file.name.replace(/\.[^.]+$/, '') : 'Pasted image',
-          data,
+          frames: [data],
+          fps: 8,
           source: 'import',
         })
       } catch {
