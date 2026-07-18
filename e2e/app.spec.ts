@@ -105,6 +105,51 @@ test('frame timeline: duplicate, navigate, and save an animation', async ({ page
   await expect(page.locator('.image-node .node-dims')).toHaveText('64×64 · 2f')
 })
 
+test('reduces colors to a preset palette with live preview', async ({ page }) => {
+  const GAME_BOY = ['#0f380f', '#306230', '#8bac0f', '#9bbc0e']
+
+  await page.click('button[title="New drawing"]')
+  const canvas = page.locator('.ed-stage canvas')
+  await canvas.waitFor()
+  const bb = (await canvas.boundingBox())!
+  const cx = bb.x + bb.width / 2
+  const cy = bb.y + bb.height / 2
+
+  const stroke = async (hex: string, dy: number) => {
+    await page.fill('.ed-hex', hex)
+    await page.keyboard.press('Enter')
+    await page.mouse.move(cx - 80, cy + dy)
+    await page.mouse.down()
+    await page.mouse.move(cx + 80, cy + dy, { steps: 4 })
+    await page.mouse.up()
+  }
+  await stroke('#f0a441', -40)
+  await stroke('#38b764', 0)
+  await stroke('#3b5dc9', 40)
+
+  await page.click('.ed-reduce')
+  await page.selectOption('.ed-pal-select', 'gameboy')
+  await expect(page.locator('.ed-colors-pal i')).toHaveCount(4)
+  await page.click('.ed-colors .btn.primary')
+  await expect(page.locator('.ed-colors')).toHaveCount(0)
+
+  const swatches = await page
+    .locator('.ed-panel .ed-swatches')
+    .first()
+    .locator('.ed-swatch')
+    .evaluateAll((els) => els.map((el) => el.getAttribute('title')))
+  expect(swatches.length).toBeGreaterThan(0)
+  for (const hex of swatches) expect(GAME_BOY).toContain(hex)
+
+  await page.keyboard.press('ControlOrMeta+z')
+  const restored = await page
+    .locator('.ed-panel .ed-swatches')
+    .first()
+    .locator('.ed-swatch')
+    .evaluateAll((els) => els.map((el) => el.getAttribute('title')))
+  expect(restored).toContain('#f0a441')
+})
+
 test('generates through the node graph with a mocked API', async ({ page }) => {
   await page.route('**/api/rd/v1/inferences/credits', (route) =>
     route.fulfill({ json: { credits: 0, balance: 5 } })

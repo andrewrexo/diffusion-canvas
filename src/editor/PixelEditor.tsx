@@ -14,6 +14,7 @@ import {
   type RGBA,
 } from './tools'
 import { extractPalette, SWEETIE_16 } from './palettes'
+import { ColorsDialog } from './ColorsDialog'
 import {
   IconBack,
   IconBucket,
@@ -152,6 +153,7 @@ export function PixelEditor({ id }: { id: string }) {
   const hoverRef = useRef<{ x: number; y: number } | null>(null)
   const onionRef = useRef(false)
   const playingRef = useRef(false)
+  const previewRef = useRef<ImageData | null>(null)
 
   const [ready, setReady] = useState(false)
   const [tool, setTool] = useState<Tool>('pencil')
@@ -171,6 +173,7 @@ export function PixelEditor({ id }: { id: string }) {
   const [onion, setOnion] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [fps, setFps] = useState(8)
+  const [colorsOpen, setColorsOpen] = useState(false)
 
   const currentImg = () => framesRef.current[frameRef.current] ?? null
 
@@ -188,7 +191,7 @@ export function PixelEditor({ id }: { id: string }) {
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current
-    const img = currentImg()
+    const img = previewRef.current ?? framesRef.current[frameRef.current]
     if (!canvas || !img) return
     const dpr = window.devicePixelRatio || 1
     const cw = canvas.clientWidth
@@ -385,6 +388,39 @@ export function PixelEditor({ id }: { id: string }) {
     if (framesRef.current.length > 1) setPlaying((p) => !p)
   }
 
+  const getFrames = useCallback(() => framesRef.current, [])
+
+  const handlePreview = useCallback(
+    (img: ImageData | null) => {
+      previewRef.current = img
+      redraw()
+    },
+    [redraw]
+  )
+
+  const closeColors = useCallback(() => {
+    previewRef.current = null
+    setColorsOpen(false)
+    redraw()
+  }, [redraw])
+
+  const applyColors = (transform: (img: ImageData) => ImageData, all: boolean) => {
+    const frames = framesRef.current
+    if (all && frames.length > 1) {
+      pushEntry(snapshotFrames())
+      framesRef.current = frames.map(transform)
+    } else {
+      pushUndo()
+      frames[frameRef.current] = transform(frames[frameRef.current])
+    }
+    previewRef.current = null
+    setColorsOpen(false)
+    setDirty(true)
+    refreshPalette()
+    bumpTimeline()
+    redraw()
+  }
+
   const save = () => {
     const n = useStore.getState().doc.nodes[id]
     if (!framesRef.current.length || !n || n.kind !== 'image') return
@@ -419,9 +455,14 @@ export function PixelEditor({ id }: { id: string }) {
     setZoomHud(z)
   }, [])
 
-  const apiRef = useRef({ undo, redo, save, requestClose, stepFrame, toggleOnion, togglePlay })
+  const escape = () => {
+    if (colorsOpen) closeColors()
+    else requestClose()
+  }
+
+  const apiRef = useRef({ undo, redo, save, escape, stepFrame, toggleOnion, togglePlay })
   useEffect(() => {
-    apiRef.current = { undo, redo, save, requestClose, stepFrame, toggleOnion, togglePlay }
+    apiRef.current = { undo, redo, save, escape, stepFrame, toggleOnion, togglePlay }
   })
 
   useEffect(() => {
@@ -534,7 +575,7 @@ export function PixelEditor({ id }: { id: string }) {
         else if (key === 'o') apiRef.current.toggleOnion()
         else if (key === 'enter' && !(e.target instanceof HTMLButtonElement)) {
           apiRef.current.togglePlay()
-        } else if (key === 'escape') apiRef.current.requestClose()
+        } else if (key === 'escape') apiRef.current.escape()
       }
     }
     const onKeyUp = (e: KeyboardEvent) => {
@@ -580,7 +621,7 @@ export function PixelEditor({ id }: { id: string }) {
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const img = currentImg()
-    if (!img) return
+    if (!img || colorsOpen) return
     if (playing) {
       setPlaying(false)
       return
@@ -712,6 +753,16 @@ export function PixelEditor({ id }: { id: string }) {
             {pos ? `${pos.x},${pos.y}` : '–'} &nbsp;·&nbsp; {Math.round(zoomHud * 100)}%
             {frameCount > 1 && <> &nbsp;·&nbsp; f{frame + 1}/{frameCount}</>}
           </div>
+          {colorsOpen && ready && (
+            <ColorsDialog
+              frameCount={frameCount}
+              currentFrame={frame}
+              getFrames={getFrames}
+              onPreview={handlePreview}
+              onApply={applyColors}
+              onClose={closeColors}
+            />
+          )}
         </div>
         <aside className="ed-panel">
           <div className="ed-color-row">
@@ -759,6 +810,9 @@ export function PixelEditor({ id }: { id: string }) {
               />
             ))}
           </div>
+          <button className="btn ed-reduce" onClick={() => setColorsOpen(true)}>
+            Reduce colors…
+          </button>
         </aside>
       </div>
       {ready && (
