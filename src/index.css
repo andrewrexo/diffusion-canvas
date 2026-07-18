@@ -755,6 +755,100 @@ button {
   background: var(--accent-soft);
 }
 
+.ed-timeline {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 58px;
+  padding: 0 10px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.ed-fps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.ed-fps input {
+  width: 42px;
+  padding: 3px 4px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  outline: none;
+}
+
+.ed-frames {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 2px;
+  overflow-x: auto;
+}
+
+.ed-frame {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: 42px;
+  min-width: 42px;
+  padding: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+}
+
+.ed-frame canvas {
+  display: block;
+  height: 36px;
+  width: auto;
+  image-rendering: pixelated;
+}
+
+.ed-frame span {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  padding: 0 2px;
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--text-dim);
+  background: rgba(10, 11, 13, 0.55);
+}
+
+.ed-frame.active {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+
+.ed-frame.add {
+  min-width: 28px;
+  font-size: 15px;
+  color: var(--text-dim);
+}
+
+.ed-frame.add:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.iconbtn.active-accent {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
 /* ---------- dialogs and toasts ---------- */
 
 .overlay {

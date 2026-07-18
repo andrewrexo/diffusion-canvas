@@ -100,3 +100,40 @@ export const IconBack = () => (
     <path d="M9.5 2.5 L4.5 7.5 L9.5 12.5" />
   </svg>
 )
+
+export const IconNext = () => (
+  <svg {...base} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5.5 2.5 L10.5 7.5 L5.5 12.5" />
+  </svg>
+)
+
+export const IconPlay = () => (
+  <svg {...base}>
+    <path d="M4.5 2.5 L12 7.5 L4.5 12.5 Z" fill="currentColor" stroke="none" />
+  </svg>
+)
+
+export const IconPause = () => (
+  <svg {...base}>
+    <g fill="currentColor" stroke="none">
+      <rect x="3.5" y="2.5" width="3" height="10" />
+      <rect x="8.5" y="2.5" width="3" height="10" />
+    </g>
+  </svg>
+)
+
+export const IconOnion = () => (
+  <svg {...base}>
+    <rect x="1.5" y="4.5" width="8" height="8" opacity="0.45" />
+    <rect x="5.5" y="2.5" width="8" height="8" />
+  </svg>
+)
+
+export const IconTrash = () => (
+  <svg {...base} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2.5 4 H12.5" />
+    <path d="M5.5 4 V2.5 H9.5 V4" />
+    <path d="M3.7 4 L4.4 12.5 H10.6 L11.3 4" />
+    <path d="M6.2 6.3 V10.3 M8.8 6.3 V10.3" />
+  </svg>
+)

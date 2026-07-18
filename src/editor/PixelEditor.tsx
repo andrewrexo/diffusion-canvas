@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { loadImage } from '../lib/image'
 import { clamp } from '../lib/util'
@@ -19,10 +19,15 @@ import {
   IconBucket,
   IconEraser,
   IconLine,
+  IconNext,
+  IconOnion,
+  IconPause,
   IconPencil,
   IconPicker,
+  IconPlay,
   IconRect,
   IconRedo,
+  IconTrash,
   IconUndo,
 } from '../ui/icons'
 
@@ -49,6 +54,10 @@ interface View {
 type Stroke =
   | { kind: 'paint'; last: { x: number; y: number } }
   | { kind: 'shape'; start: { x: number; y: number }; base: ImageData }
+
+type HistEntry =
+  | { kind: 'pixels'; frame: number; data: ImageData }
+  | { kind: 'frames'; frames: ImageData[]; frame: number }
 
 function isEditable(target: EventTarget | null) {
   return (
@@ -92,20 +101,57 @@ function HexInput({ value, onCommit }: { value: string; onCommit: (c: RGBA) => v
   )
 }
 
+function FrameThumb({
+  index,
+  active,
+  revision,
+  getFrame,
+  onSelect,
+}: {
+  index: number
+  active: boolean
+  revision: number
+  getFrame: (i: number) => ImageData | undefined
+  onSelect: () => void
+}) {
+  const ref = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    if (revision < 0) return
+    const img = getFrame(index)
+    const c = ref.current
+    if (!img || !c) return
+    c.width = img.width
+    c.height = img.height
+    c.getContext('2d')!.putImageData(img, 0, 0)
+  }, [index, revision, getFrame])
+
+  return (
+    <button className={`ed-frame${active ? ' active' : ''}`} onClick={onSelect}>
+      <canvas ref={ref} />
+      <span>{index + 1}</span>
+    </button>
+  )
+}
+
 export function PixelEditor({ id }: { id: string }) {
   const node = useStore((s) => s.doc.nodes[id])
 
   const stageRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const imgRef = useRef<ImageData | null>(null)
+  const framesRef = useRef<ImageData[]>([])
+  const frameRef = useRef(0)
   const offRef = useRef<HTMLCanvasElement | null>(null)
+  const ghostRef = useRef<HTMLCanvasElement | null>(null)
   const patternRef = useRef<HTMLCanvasElement | null>(null)
   const viewRef = useRef<View>({ x: 0, y: 0, z: 8 })
-  const undoRef = useRef<ImageData[]>([])
-  const redoRef = useRef<ImageData[]>([])
+  const undoRef = useRef<HistEntry[]>([])
+  const redoRef = useRef<HistEntry[]>([])
   const strokeRef = useRef<Stroke | null>(null)
   const panRef = useRef<{ x: number; y: number } | null>(null)
   const hoverRef = useRef<{ x: number; y: number } | null>(null)
+  const onionRef = useRef(false)
+  const playingRef = useRef(false)
 
   const [ready, setReady] = useState(false)
   const [tool, setTool] = useState<Tool>('pencil')
@@ -119,14 +165,30 @@ export function PixelEditor({ id }: { id: string }) {
   const [zoomHud, setZoomHud] = useState(8)
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
   const [imagePalette, setImagePalette] = useState<string[]>([])
+  const [frame, setFrameState] = useState(0)
+  const [frameCount, setFrameCount] = useState(1)
+  const [revision, setRevision] = useState(0)
+  const [onion, setOnion] = useState(false)
+  const [playing, setPlaying] = useState(false)
+  const [fps, setFps] = useState(8)
 
-  const refreshPalette = () => {
-    if (imgRef.current) setImagePalette(extractPalette(imgRef.current))
-  }
+  const currentImg = () => framesRef.current[frameRef.current] ?? null
 
-  const redraw = () => {
+  const getFrame = useCallback((i: number) => framesRef.current[i], [])
+
+  const refreshPalette = useCallback(() => {
+    const img = framesRef.current[frameRef.current]
+    if (img) setImagePalette(extractPalette(img))
+  }, [])
+
+  const bumpTimeline = useCallback(() => {
+    setRevision((v) => v + 1)
+    setFrameCount(framesRef.current.length)
+  }, [])
+
+  const redraw = useCallback(() => {
     const canvas = canvasRef.current
-    const img = imgRef.current
+    const img = currentImg()
     if (!canvas || !img) return
     const dpr = window.devicePixelRatio || 1
     const cw = canvas.clientWidth
@@ -147,6 +209,22 @@ export function PixelEditor({ id }: { id: string }) {
     patternRef.current ??= makeCheckerPattern()
     ctx.fillStyle = ctx.createPattern(patternRef.current, 'repeat')!
     ctx.fillRect(ox, oy, w, h)
+    ctx.imageSmoothingEnabled = false
+
+    const prev = framesRef.current[frameRef.current - 1]
+    if (onionRef.current && !playingRef.current && prev) {
+      let ghost = ghostRef.current
+      if (!ghost || ghost.width !== prev.width || ghost.height !== prev.height) {
+        ghost = document.createElement('canvas')
+        ghost.width = prev.width
+        ghost.height = prev.height
+        ghostRef.current = ghost
+      }
+      ghost.getContext('2d')!.putImageData(prev, 0, 0)
+      ctx.globalAlpha = 0.3
+      ctx.drawImage(ghost, ox, oy, w, h)
+      ctx.globalAlpha = 1
+    }
 
     let off = offRef.current
     if (!off || off.width !== img.width || off.height !== img.height) {
@@ -156,7 +234,6 @@ export function PixelEditor({ id }: { id: string }) {
       offRef.current = off
     }
     off.getContext('2d')!.putImageData(img, 0, 0)
-    ctx.imageSmoothingEnabled = false
     ctx.drawImage(off, ox, oy, w, h)
 
     ctx.strokeStyle = '#3d414b'
@@ -189,55 +266,137 @@ export function PixelEditor({ id }: { id: string }) {
       ctx.strokeStyle = 'rgba(240, 164, 65, 0.9)'
       ctx.strokeRect(ox + hover.x * z + 0.5, oy + hover.y * z + 0.5, z - 1, z - 1)
     }
-  }
+  }, [])
+
+  const setFrame = useCallback(
+    (i: number) => {
+      frameRef.current = i
+      setFrameState(i)
+      if (!playingRef.current) refreshPalette()
+      redraw()
+    },
+    [redraw, refreshPalette]
+  )
 
   const syncHistory = () => {
     setCanUndo(undoRef.current.length > 0)
     setCanRedo(redoRef.current.length > 0)
   }
 
-  const pushUndo = () => {
-    const img = imgRef.current
-    if (!img) return
-    undoRef.current.push(cloneImage(img))
+  const pushEntry = (entry: HistEntry) => {
+    undoRef.current.push(entry)
     if (undoRef.current.length > UNDO_LIMIT) undoRef.current.shift()
     redoRef.current = []
     syncHistory()
   }
 
+  const pushUndo = () => {
+    const img = currentImg()
+    if (img) pushEntry({ kind: 'pixels', frame: frameRef.current, data: cloneImage(img) })
+  }
+
+  const snapshotFrames = (): HistEntry => ({
+    kind: 'frames',
+    frames: framesRef.current.map(cloneImage),
+    frame: frameRef.current,
+  })
+
+  /* Applies a history entry and returns its inverse. */
+  const applyEntry = (entry: HistEntry): HistEntry => {
+    if (entry.kind === 'pixels') {
+      const inverse: HistEntry = {
+        kind: 'pixels',
+        frame: entry.frame,
+        data: cloneImage(framesRef.current[entry.frame]),
+      }
+      framesRef.current[entry.frame] = entry.data
+      setFrame(entry.frame)
+      return inverse
+    }
+    const inverse = snapshotFrames()
+    framesRef.current = entry.frames
+    setFrame(Math.min(entry.frame, entry.frames.length - 1))
+    return inverse
+  }
+
   const undo = () => {
-    const img = imgRef.current
-    const prev = undoRef.current.pop()
-    if (!img || !prev) return
-    redoRef.current.push(cloneImage(img))
-    imgRef.current = prev
+    const entry = undoRef.current.pop()
+    if (!entry) return
+    redoRef.current.push(applyEntry(entry))
     syncHistory()
     setDirty(true)
     refreshPalette()
-    redraw()
+    bumpTimeline()
   }
 
   const redo = () => {
-    const img = imgRef.current
-    const next = redoRef.current.pop()
-    if (!img || !next) return
-    undoRef.current.push(cloneImage(img))
-    imgRef.current = next
+    const entry = redoRef.current.pop()
+    if (!entry) return
+    undoRef.current.push(applyEntry(entry))
     syncHistory()
     setDirty(true)
     refreshPalette()
+    bumpTimeline()
+  }
+
+  const addFrame = () => {
+    const img = currentImg()
+    if (!img) return
+    pushEntry(snapshotFrames())
+    framesRef.current.splice(frameRef.current + 1, 0, cloneImage(img))
+    setFrame(frameRef.current + 1)
+    setDirty(true)
+    bumpTimeline()
+  }
+
+  const deleteFrame = () => {
+    if (framesRef.current.length < 2) return
+    pushEntry(snapshotFrames())
+    framesRef.current.splice(frameRef.current, 1)
+    setFrame(Math.min(frameRef.current, framesRef.current.length - 1))
+    setDirty(true)
+    bumpTimeline()
+  }
+
+  const moveFrame = (dir: -1 | 1) => {
+    const frames = framesRef.current
+    const i = frameRef.current
+    const j = i + dir
+    if (j < 0 || j >= frames.length) return
+    pushEntry(snapshotFrames())
+    ;[frames[i], frames[j]] = [frames[j], frames[i]]
+    setFrame(j)
+    setDirty(true)
+    bumpTimeline()
+  }
+
+  const stepFrame = (dir: -1 | 1) => {
+    const len = framesRef.current.length
+    if (len > 1) setFrame((frameRef.current + dir + len) % len)
+  }
+
+  const toggleOnion = () => {
+    onionRef.current = !onionRef.current
+    setOnion(onionRef.current)
     redraw()
   }
 
+  const togglePlay = () => {
+    if (framesRef.current.length > 1) setPlaying((p) => !p)
+  }
+
   const save = () => {
-    const img = imgRef.current
     const n = useStore.getState().doc.nodes[id]
-    if (!img || !n || n.kind !== 'image') return
+    if (!framesRef.current.length || !n || n.kind !== 'image') return
     const c = document.createElement('canvas')
-    c.width = img.width
-    c.height = img.height
-    c.getContext('2d')!.putImageData(img, 0, 0)
-    useStore.getState().commitFrames(id, [c.toDataURL('image/png')], n.fps)
+    c.width = n.w
+    c.height = n.h
+    const ctx = c.getContext('2d')!
+    const urls = framesRef.current.map((img) => {
+      ctx.putImageData(img, 0, 0)
+      return c.toDataURL('image/png')
+    })
+    useStore.getState().commitFrames(id, urls, fps)
     useStore.getState().closeEditor()
   }
 
@@ -246,9 +405,9 @@ export function PixelEditor({ id }: { id: string }) {
     useStore.getState().closeEditor()
   }
 
-  const fitView = () => {
+  const fitView = useCallback(() => {
     const stage = stageRef.current
-    const img = imgRef.current
+    const img = framesRef.current[frameRef.current]
     if (!stage || !img) return
     const raw = Math.min(stage.clientWidth / img.width, stage.clientHeight / img.height) * 0.85
     const z = raw >= 1 ? Math.max(1, Math.floor(raw)) : Math.max(0.25, raw)
@@ -258,11 +417,11 @@ export function PixelEditor({ id }: { id: string }) {
       z,
     }
     setZoomHud(z)
-  }
+  }, [])
 
-  const apiRef = useRef({ undo, redo, save, requestClose })
+  const apiRef = useRef({ undo, redo, save, requestClose, stepFrame, toggleOnion, togglePlay })
   useEffect(() => {
-    apiRef.current = { undo, redo, save, requestClose }
+    apiRef.current = { undo, redo, save, requestClose, stepFrame, toggleOnion, togglePlay }
   })
 
   useEffect(() => {
@@ -272,26 +431,49 @@ export function PixelEditor({ id }: { id: string }) {
       useStore.getState().closeEditor()
       return
     }
-    void loadImage(n.frames[0]).then((el) => {
+    void Promise.all(n.frames.map(loadImage)).then((els) => {
       if (!live) return
       const c = document.createElement('canvas')
       c.width = n.w
       c.height = n.h
       const ctx = c.getContext('2d')!
-      ctx.drawImage(el, 0, 0)
-      imgRef.current = ctx.getImageData(0, 0, n.w, n.h)
+      framesRef.current = els.map((el) => {
+        ctx.clearRect(0, 0, n.w, n.h)
+        ctx.drawImage(el, 0, 0)
+        return ctx.getImageData(0, 0, n.w, n.h)
+      })
+      frameRef.current = 0
+      setFps(n.fps)
       fitView()
       setReady(true)
       refreshPalette()
+      bumpTimeline()
     })
     return () => {
       live = false
     }
-  }, [id])
+  }, [id, fitView, refreshPalette, bumpTimeline])
 
   useEffect(() => {
     if (ready) redraw()
-  }, [ready])
+  }, [ready, redraw])
+
+  useEffect(() => {
+    playingRef.current = playing
+    if (!playing) return
+    let raf = 0
+    let last = performance.now()
+    const tick = (t: number) => {
+      if (t - last >= 1000 / fps) {
+        last = t
+        const len = framesRef.current.length
+        setFrame((frameRef.current + 1) % len)
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [playing, fps, setFrame])
 
   useEffect(() => {
     const stage = stageRef.current
@@ -319,7 +501,7 @@ export function PixelEditor({ id }: { id: string }) {
       observer.disconnect()
       stage.removeEventListener('wheel', onWheel)
     }
-  }, [])
+  }, [redraw])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -347,7 +529,12 @@ export function PixelEditor({ id }: { id: string }) {
         else if (key === 'i') setTool('picker')
         else if (key === '[') setBrush((b) => Math.max(1, b - 1))
         else if (key === ']') setBrush((b) => Math.min(4, b + 1))
-        else if (key === 'escape') apiRef.current.requestClose()
+        else if (key === 'arrowleft') apiRef.current.stepFrame(-1)
+        else if (key === 'arrowright') apiRef.current.stepFrame(1)
+        else if (key === 'o') apiRef.current.toggleOnion()
+        else if (key === 'enter' && !(e.target instanceof HTMLButtonElement)) {
+          apiRef.current.togglePlay()
+        } else if (key === 'escape') apiRef.current.requestClose()
       }
     }
     const onKeyUp = (e: KeyboardEvent) => {
@@ -372,12 +559,12 @@ export function PixelEditor({ id }: { id: string }) {
   }
 
   const inBounds = (p: { x: number; y: number }) => {
-    const img = imgRef.current
+    const img = currentImg()
     return !!img && p.x >= 0 && p.y >= 0 && p.x < img.width && p.y < img.height
   }
 
   const pick = (p: { x: number; y: number }) => {
-    const img = imgRef.current
+    const img = currentImg()
     if (!img || !inBounds(p)) return
     const c = getPixel(img, p.x, p.y)
     if (c[3] > 0) setColor([c[0], c[1], c[2], 255])
@@ -388,11 +575,16 @@ export function PixelEditor({ id }: { id: string }) {
     strokeRef.current = null
     setDirty(true)
     refreshPalette()
+    bumpTimeline()
   }
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const img = imgRef.current
+    const img = currentImg()
     if (!img) return
+    if (playing) {
+      setPlaying(false)
+      return
+    }
     if (e.button === 1 || (e.button === 0 && spaceHeld)) {
       panRef.current = { x: e.clientX, y: e.clientY }
       setPanning(true)
@@ -425,7 +617,7 @@ export function PixelEditor({ id }: { id: string }) {
   }
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const img = imgRef.current
+    const img = currentImg()
     if (!img) return
     if (panRef.current) {
       const v = viewRef.current
@@ -518,6 +710,7 @@ export function PixelEditor({ id }: { id: string }) {
           )}
           <div className="ed-hud">
             {pos ? `${pos.x},${pos.y}` : '–'} &nbsp;·&nbsp; {Math.round(zoomHud * 100)}%
+            {frameCount > 1 && <> &nbsp;·&nbsp; f{frame + 1}/{frameCount}</>}
           </div>
         </div>
         <aside className="ed-panel">
@@ -568,6 +761,84 @@ export function PixelEditor({ id }: { id: string }) {
           </div>
         </aside>
       </div>
+      {ready && (
+        <div className="ed-timeline">
+          <button
+            className="iconbtn"
+            disabled={frameCount < 2}
+            title={playing ? 'Pause (Enter)' : 'Play (Enter)'}
+            onClick={togglePlay}
+          >
+            {playing ? <IconPause /> : <IconPlay />}
+          </button>
+          <label className="ed-fps" title="Playback speed">
+            <input
+              type="number"
+              min={1}
+              max={30}
+              value={fps}
+              onChange={(e) => {
+                const parsed = parseInt(e.target.value, 10)
+                if (!Number.isNaN(parsed)) {
+                  setFps(clamp(parsed, 1, 30))
+                  setDirty(true)
+                }
+              }}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+            fps
+          </label>
+          <div className="ed-frames">
+            {Array.from({ length: frameCount }, (_, i) => (
+              <FrameThumb
+                key={i}
+                index={i}
+                active={i === frame}
+                revision={revision}
+                getFrame={getFrame}
+                onSelect={() => {
+                  setPlaying(false)
+                  setFrame(i)
+                }}
+              />
+            ))}
+            <button className="ed-frame add" title="Duplicate current frame" onClick={addFrame}>
+              +
+            </button>
+          </div>
+          <button
+            className="iconbtn"
+            disabled={frame === 0}
+            title="Move frame left"
+            onClick={() => moveFrame(-1)}
+          >
+            <IconBack />
+          </button>
+          <button
+            className="iconbtn"
+            disabled={frame >= frameCount - 1}
+            title="Move frame right"
+            onClick={() => moveFrame(1)}
+          >
+            <IconNext />
+          </button>
+          <button
+            className={`iconbtn${onion ? ' active-accent' : ''}`}
+            title="Onion skin (O)"
+            onClick={toggleOnion}
+          >
+            <IconOnion />
+          </button>
+          <button
+            className="iconbtn"
+            disabled={frameCount < 2}
+            title="Delete frame"
+            onClick={deleteFrame}
+          >
+            <IconTrash />
+          </button>
+        </div>
+      )}
     </div>
   )
 }

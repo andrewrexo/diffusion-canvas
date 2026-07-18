@@ -66,6 +66,40 @@ test('draws in the pixel editor and saves to the canvas', async ({ page }) => {
   await expect(page.locator('.image-node .node-dims')).toHaveText('64×64')
 })
 
+test('frame timeline: duplicate, navigate, and save an animation', async ({ page }) => {
+  await page.click('button[title="New drawing"]')
+  const canvas = page.locator('.ed-stage canvas')
+  await canvas.waitFor()
+  const bb = (await canvas.boundingBox())!
+  const cx = bb.x + bb.width / 2
+  const cy = bb.y + bb.height / 2
+
+  await page.mouse.move(cx - 60, cy)
+  await page.mouse.down()
+  await page.mouse.move(cx + 60, cy, { steps: 4 })
+  await page.mouse.up()
+
+  await page.click('.ed-frame.add')
+  await expect(page.locator('.ed-frame:not(.add)')).toHaveCount(2)
+  await expect(page.locator('.ed-frame.active span')).toHaveText('2')
+
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(page.locator('.ed-frame:not(.add)')).toHaveCount(1)
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect(page.locator('.ed-frame:not(.add)')).toHaveCount(2)
+
+  await page.mouse.move(cx, cy - 60)
+  await page.mouse.down()
+  await page.mouse.move(cx, cy + 60, { steps: 4 })
+  await page.mouse.up()
+
+  await page.keyboard.press('ArrowLeft')
+  await expect(page.locator('.ed-hud')).toContainText('f1/2')
+
+  await page.click('.ed-top .btn.primary')
+  await expect(page.locator('.image-node .node-dims')).toHaveText('64×64 · 2f')
+})
+
 test('generates through the node graph with a mocked API', async ({ page }) => {
   await page.route('**/api/rd/v1/inferences/credits', (route) =>
     route.fulfill({ json: { credits: 0, balance: 5 } })
