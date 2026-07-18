@@ -17,6 +17,27 @@ export const SWEETIE_16 = [
   '#333c57',
 ]
 
+export const PICO_8 = [
+  '#000000',
+  '#1d2b53',
+  '#7e2553',
+  '#008751',
+  '#ab5236',
+  '#5f574f',
+  '#c2c3c7',
+  '#fff1e8',
+  '#ff004d',
+  '#ffa300',
+  '#ffec27',
+  '#00e436',
+  '#29adff',
+  '#83769c',
+  '#ff77a8',
+  '#ffccaa',
+]
+
+export const GAME_BOY = ['#0f380f', '#306230', '#8bac0f', '#9bbc0e']
+
 export function extractPalette(img: ImageData, max = 24): string[] {
   const counts = new Map<number, number>()
   const d = img.data
